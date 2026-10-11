@@ -4,7 +4,7 @@ import com.google.cloud.storage.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.io.InputStreamResource;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
 
@@ -69,7 +69,7 @@ public class GcsStorageService implements StorageService {
         if (blob == null || !blob.exists()) {
             throw new IOException("GCS Blob not found: " + storageKey);
         }
-        return new InputStreamResource(Channels.newInputStream(blob.reader()));
+        return new ByteArrayResource(blob.getContent());
     }
 
     @Override

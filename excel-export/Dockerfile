@@ -1,22 +1,7 @@
 # ==========================================
-# Stage 1: Build Stage
+# Runtime Stage
 # ==========================================
-FROM eclipse-temurin:21-jdk-alpine AS builder
-
-WORKDIR /build
-
-# Copy Maven wrapper & POM to leverage Docker layer caching
-COPY pom.xml .
-COPY src ./src
-
-# Build the application (skip tests in container build; tests run in CI)
-RUN apk add --no-cache maven && \
-    mvn clean package -DskipTests
-
-# ==========================================
-# Stage 2: Runtime Stage
-# ==========================================
-FROM eclipse-temurin:21-jre-alpine AS runner
+FROM eclipse-temurin:21-jre-alpine
 
 WORKDIR /app
 
@@ -26,8 +11,8 @@ RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 # Create temp storage directory with permissions
 RUN mkdir -p /app/temp-exports && chown -R appuser:appgroup /app
 
-# Copy built JAR from builder stage
-COPY --from=builder --chown=appuser:appgroup /build/target/*.jar /app/app.jar
+# Copy built JAR directly from target
+COPY --chown=appuser:appgroup target/*.jar /app/app.jar
 
 USER appuser
 

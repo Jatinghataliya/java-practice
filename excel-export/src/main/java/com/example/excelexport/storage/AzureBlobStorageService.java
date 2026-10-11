@@ -9,7 +9,7 @@ import com.azure.storage.blob.sas.BlobServiceSasSignatureValues;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.io.InputStreamResource;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
 
@@ -75,7 +75,9 @@ public class AzureBlobStorageService implements StorageService {
     @Override
     public Resource loadResource(String storageKey) throws IOException {
         BlobClient blobClient = getContainerClient().getBlobClient(storageKey);
-        return new InputStreamResource(blobClient.openInputStream());
+        try (var is = blobClient.openInputStream()) {
+            return new ByteArrayResource(is.readAllBytes());
+        }
     }
 
     @Override

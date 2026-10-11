@@ -3,7 +3,7 @@ package com.example.excelexport.storage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.io.InputStreamResource;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
@@ -106,7 +106,8 @@ public class S3StorageService implements StorageService {
                 .build();
 
         ResponseInputStream<GetObjectResponse> s3Stream = getS3Client().getObject(getRequest);
-        return new InputStreamResource(s3Stream);
+        byte[] data = s3Stream.readAllBytes();
+        return new ByteArrayResource(data);
     }
 
     @Override
