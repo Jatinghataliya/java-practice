@@ -9,7 +9,7 @@ import java.time.Duration;
 public interface StorageService {
 
     /**
-     * Store the exported file into object storage (e.g. S3 / MinIO / Local Disk Blob)
+     * Store the exported file into object storage (e.g. S3 / MinIO / Azure / GCS / Local Disk)
      *
      * @param storageKey  Unique object key in storage bucket
      * @param file        Local generated file
@@ -37,4 +37,9 @@ public interface StorageService {
      * Delete file from storage
      */
     boolean deleteFile(String storageKey);
+
+    /**
+     * Identify the underlying storage type
+     */
+    StorageType getStorageType();
 }

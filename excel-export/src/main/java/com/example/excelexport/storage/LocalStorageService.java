@@ -16,7 +16,7 @@ import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 
-@Service
+@Service("localStorageService")
 public class LocalStorageService implements StorageService {
 
     private static final Logger log = LoggerFactory.getLogger(LocalStorageService.class);
@@ -38,13 +38,12 @@ public class LocalStorageService implements StorageService {
     public String storeFile(String storageKey, File file, String contentType) throws IOException {
         Path targetPath = storageDirectory.resolve(storageKey);
         Files.copy(file.toPath(), targetPath, StandardCopyOption.REPLACE_EXISTING);
-        log.info("Stored export object in storage key: {} ({} bytes)", storageKey, file.length());
+        log.info("Stored export object in local storage key: {} ({} bytes)", storageKey, file.length());
         return targetPath.toUri().toString();
     }
 
     @Override
     public String generateDownloadUrl(String storageKey, String originalFileName, Duration expiration) {
-        // Generates download route pointing to the secure download endpoint
         return "/api/v1/exports/download/" + storageKey;
     }
 
@@ -66,5 +65,10 @@ public class LocalStorageService implements StorageService {
             log.warn("Failed to delete storage file: {}", storageKey, e);
             return false;
         }
+    }
+
+    @Override
+    public StorageType getStorageType() {
+        return StorageType.LOCAL;
     }
 }

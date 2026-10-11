@@ -6,12 +6,17 @@ import com.example.excelexport.model.ExportStatus;
 import com.example.excelexport.queue.ExportQueueService;
 import com.example.excelexport.queue.ExportTaskMessage;
 import com.example.excelexport.service.JobStorageService;
+import com.example.excelexport.storage.LocalStorageService;
 import com.example.excelexport.storage.StorageService;
+import com.example.excelexport.storage.StorageType;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.core.io.Resource;
 
+import java.io.File;
+import java.io.FileWriter;
+import java.time.Duration;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -27,6 +32,38 @@ class ExcelExportApplicationTests {
 
     @Autowired
     private StorageService storageService;
+
+    @Autowired
+    private LocalStorageService localStorageService;
+
+    @Test
+    void testStorageProviderRegistration() {
+        assertNotNull(storageService);
+        assertEquals(StorageType.LOCAL, storageService.getStorageType());
+    }
+
+    @Test
+    void testLocalStorageLifecycle() throws Exception {
+        File temp = File.createTempFile("storage_test_", ".txt");
+        try (FileWriter fw = new FileWriter(temp)) {
+            fw.write("Sample storage payload data");
+        }
+
+        String key = "test_upload_" + System.currentTimeMillis() + ".txt";
+        String uri = localStorageService.storeFile(key, temp, "text/plain");
+        assertNotNull(uri);
+
+        String downloadUrl = localStorageService.generateDownloadUrl(key, "test.txt", Duration.ofHours(1));
+        assertTrue(downloadUrl.contains(key));
+
+        Resource resource = localStorageService.loadResource(key);
+        assertTrue(resource.exists());
+        assertEquals(temp.length(), resource.contentLength());
+
+        boolean deleted = localStorageService.deleteFile(key);
+        assertTrue(deleted);
+        temp.delete();
+    }
 
     @Test
     void testAsyncExcelExportQueueFlow() throws Exception {

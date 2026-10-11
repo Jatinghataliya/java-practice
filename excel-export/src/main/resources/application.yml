@@ -36,11 +36,29 @@ spring:
       path: /h2-console
 
 app:
+  storage:
+    type: local # Options: local | s3 | minio | azure | gcs
+    s3:
+      bucket-name: my-export-bucket
+      region: us-east-1
+      access-key:
+      secret-key:
+    minio:
+      endpoint: http://localhost:9000
+      bucket-name: export-bucket
+      access-key: minioadmin
+      secret-key: minioadmin
+    azure:
+      connection-string:
+      container-name: export-container
+    gcs:
+      bucket-name: my-gcs-export-bucket
+
   export:
     storage-dir: ./temp-exports
     batch-fetch-size: 2000
     rows-per-sheet: 1000000
-    seed-sample-records: 50000 # Number of records to automatically seed on startup for quick testing
+    seed-sample-records: 50000
     thread-pool:
       core-pool-size: 4
       max-pool-size: 8
