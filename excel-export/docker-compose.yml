@@ -1,6 +1,26 @@
 services:
   # -----------------------------------------------------------
-  # Spring Boot Excel Export Service (Self-contained)
+  # MinIO Object Storage (Self-hosted S3 compatible store)
+  # -----------------------------------------------------------
+  minio:
+    build:
+      context: .
+      dockerfile: Dockerfile.minio
+    container_name: minio-storage
+    ports:
+      - "9000:9000"   # MinIO S3 API Endpoint
+      - "9001:9001"   # MinIO Web Console UI
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    volumes:
+      - minio-data:/data
+    restart: unless-stopped
+    networks:
+      - export-network
+
+  # -----------------------------------------------------------
+  # Spring Boot Excel Export Service
   # -----------------------------------------------------------
   excel-export-service:
     build:
@@ -11,9 +31,15 @@ services:
       - "8080:8080"
     environment:
       - SPRING_PROFILES_ACTIVE=default
-      - APP_STORAGE_TYPE=local
+      - APP_STORAGE_TYPE=minio
+      - APP_STORAGE_MINIO_ENDPOINT=http://minio:9000
+      - APP_STORAGE_MINIO_BUCKET_NAME=export-bucket
+      - APP_STORAGE_MINIO_ACCESS_KEY=minioadmin
+      - APP_STORAGE_MINIO_SECRET_KEY=minioadmin
       - APP_EXPORT_STORAGE_DIR=/app/temp-exports
       - JAVA_OPTS=-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:+UseG1GC
+    depends_on:
+      - minio
     volumes:
       - app-temp-exports:/app/temp-exports
     restart: unless-stopped
@@ -21,6 +47,7 @@ services:
       - export-network
 
 volumes:
+  minio-data:
   app-temp-exports:
 
 networks:

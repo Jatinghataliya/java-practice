@@ -76,11 +76,13 @@ An enterprise-grade, distributed, high-performance export architecture for Sprin
 ```bash
 cd Thread/excel-export
 
-# Spin up self-contained Spring Boot export service
+# Spin up Spring Boot export service & MinIO storage stack
 docker compose up -d --build
 ```
 
 - **Spring Boot API:** `http://localhost:8080`
+- **MinIO S3 Endpoint:** `http://localhost:9000`
+- **MinIO Web Console:** `http://localhost:9001` (Credentials: `minioadmin` / `minioadmin`)
 
 ### Build & Run Single Container
 

@@ -68,8 +68,27 @@ public class MinioStorageService implements StorageService {
         return minioPresigner;
     }
 
+    private void ensureBucketExists() {
+        try {
+            getMinioClient().headBucket(HeadBucketRequest.builder().bucket(bucketName).build());
+        } catch (NoSuchBucketException e) {
+            log.info("Bucket [{}] does not exist in MinIO. Creating it automatically...", bucketName);
+            getMinioClient().createBucket(CreateBucketRequest.builder().bucket(bucketName).build());
+        } catch (S3Exception e) {
+            if (e.statusCode() == 404) {
+                log.info("Bucket [{}] not found (HTTP 404). Creating it automatically...", bucketName);
+                getMinioClient().createBucket(CreateBucketRequest.builder().bucket(bucketName).build());
+            } else {
+                log.warn("Warning checking MinIO bucket [{}]: {}", bucketName, e.getMessage());
+            }
+        } catch (Exception e) {
+            log.warn("Unexpected exception inspecting MinIO bucket [{}]: {}", bucketName, e.getMessage());
+        }
+    }
+
     @Override
     public String storeFile(String storageKey, File file, String contentType) throws IOException {
+        ensureBucketExists();
         PutObjectRequest putRequest = PutObjectRequest.builder()
                 .bucket(bucketName)
                 .key(storageKey)
