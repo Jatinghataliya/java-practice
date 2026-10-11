@@ -33,18 +33,17 @@ An enterprise-grade, distributed, high-performance export architecture for Sprin
                    │ 4. Fast Streaming Gen + Upload
                    ▼
           ┌───────────────────────────────────┐
-          │ Object Storage (Blob / S3 / MinIO)│
+          │ Object Storage (Local/S3/MinIO/...)│
           └───────────────────────────────────┘
 ```
 
 ---
 
-## 🚀 Key Phase 2 Features
+## 🚀 Key Features
 
 1. **Decoupled Job Queue & Worker Consumers:**
    - Client requests are accepted immediately (`202 Accepted`) and submitted to a resilient job queue.
    - Dedicated worker pool consumes tasks with backpressure handling, error isolation, and **exponential backoff retries** (up to 3 retries).
-   - Easily swappable with RabbitMQ, Kafka, or AWS SQS in multi-node clusters.
 
 2. **Persistent Job Store (Spring Data JPA):**
    - Job metadata and execution lifecycles are persisted in the database (`export_jobs`).
@@ -54,16 +53,49 @@ An enterprise-grade, distributed, high-performance export architecture for Sprin
    - Clients connect via `GET /api/v1/exports/notifications/sse/{jobId}`.
    - Workers push live percentage progress updates (0% -> 100%) and instant download URLs directly to the client without polling.
 
-4. **Object Storage Abstraction (`StorageService`):**
-   - Decoupled from application local storage.
-   - Out-of-the-box local blob storage with token security, easily pluggable with AWS S3 / MinIO buckets.
+4. **Pluggable Object Storage Providers:**
+   - **`Local`**: Fast local file storage with secure download tokens.
+   - **`AWS S3`**: AWS SDK v2 with `S3Presigner` for direct client downloads.
+   - **`MinIO`**: On-premise S3-compatible object storage with custom endpoints.
+   - **`Azure Blob`**: Microsoft Azure Storage with SAS token generation.
+   - **`Google GCS`**: Google Cloud Storage with V4 Signed URLs.
 
 5. **Multi-Format Support:**
    - **`XLSX` (FastExcel):** Multi-sheet rollover (>1,000,000 rows/sheet) with 3x–5x performance over Apache POI.
    - **`CSV_GZ` (GZipped CSV):** Ultra-high throughput compressed CSV for massive datasets (5M–10M+ rows).
 
-6. **JDBC Cursor Streaming:**
-   - Constant low heap footprint (<64MB JVM heap used even during 1M+ export).
+6. **Memory Safety with JDBC Cursor Streaming:**
+   - Constant low heap footprint (<64MB JVM heap used even during 1M+ exports).
+
+---
+
+## 🐳 Docker & Docker Compose Deployment
+
+### Run Complete Stack (Spring Boot + MinIO Object Storage)
+
+```bash
+cd Thread/excel-export
+
+# Spin up Spring Boot service and MinIO Object Storage
+docker compose up -d --build
+```
+
+- **Spring Boot API:** `http://localhost:8080`
+- **MinIO S3 Endpoint:** `http://localhost:9000`
+- **MinIO Web Console:** `http://localhost:9001` (User: `minioadmin`, Pass: `minioadmin`)
+
+### Build & Run Single Container
+
+```bash
+# Build Docker image
+docker build -t excel-export-service:latest .
+
+# Run container with resource limits
+docker run -d -p 8080:8080 \
+  -e APP_STORAGE_TYPE=local \
+  -m 512m --cpus 2.0 \
+  --name excel-export excel-export-service:latest
+```
 
 ---
 
@@ -138,12 +170,12 @@ POST /api/v1/exports/seed?count=100000
 
 ---
 
-## 🧪 Testing & Verification
+## 🧪 Local Testing Without Docker
 
 ```bash
 # Run unit and integration tests
 mvn clean test
 
-# Run the Spring Boot application
+# Run Spring Boot application locally
 mvn spring-boot:run
 ```

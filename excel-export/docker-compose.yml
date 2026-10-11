@@ -1,0 +1,75 @@
+version: '3.8'
+
+services:
+  # -----------------------------------------------------------
+  # Spring Boot Excel Export Service
+  # -----------------------------------------------------------
+  excel-export-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: excel-export-service
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=default
+      - APP_STORAGE_TYPE=minio
+      - APP_STORAGE_MINIO_ENDPOINT=http://minio:9000
+      - APP_STORAGE_MINIO_BUCKET_NAME=export-bucket
+      - APP_STORAGE_MINIO_ACCESS_KEY=minioadmin
+      - APP_STORAGE_MINIO_SECRET_KEY=minioadmin
+      - APP_EXPORT_STORAGE_DIR=/app/temp-exports
+      - JAVA_OPTS=-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:+UseG1GC
+    volumes:
+      - app-temp-exports:/app/temp-exports
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    networks:
+      - export-network
+
+  # -----------------------------------------------------------
+  # MinIO S3-Compatible Object Storage
+  # -----------------------------------------------------------
+  minio:
+    image: minio/minio:RELEASE.2024-03-30T09-41-56Z
+    container_name: minio-storage
+    ports:
+      - "9000:9000"   # S3 API endpoint
+      - "9001:9001"   # MinIO Web UI Console
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio-data:/data
+    restart: unless-stopped
+    networks:
+      - export-network
+
+  # -----------------------------------------------------------
+  # MinIO One-Shot Bucket Initialization Helper
+  # -----------------------------------------------------------
+  minio-init:
+    image: minio/mc:RELEASE.2024-03-30T15-30-22Z
+    container_name: minio-init
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      /usr/bin/mc alias set myminio http://minio:9000 minioadmin minioadmin;
+      /usr/bin/mc mb myminio/export-bucket || true;
+      /usr/bin/mc anonymous set download myminio/export-bucket;
+      exit 0;
+      "
+    networks:
+      - export-network
+
+volumes:
+  minio-data:
+  app-temp-exports:
+
+networks:
+  export-network:
+    driver: bridge
