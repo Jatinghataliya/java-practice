@@ -1,130 +1,149 @@
-# High-Performance Millions-Record Excel Export Service (Phase 1)
+# Distributed Enterprise Millions-Record Export Service (Phase 2)
 
-A production-ready Spring Boot service designed to export large datasets (thousands to millions of records) to `.xlsx` Excel spreadsheets with low memory footprint and zero HTTP timeouts.
-
----
-
-## Architecture Highlights
-
-1. **Non-Blocking Asynchronous Jobs (`202 Accepted`):**
-   - The client triggers an export via `POST /api/v1/exports/generate` and immediately receives a `jobId`.
-   - Excel generation runs in a dedicated background `ThreadPoolTaskExecutor`.
-   - Eliminates gateway timeouts (Cloudflare, Nginx, ALB 504 errors).
-
-2. **Fast Streaming Excel Generation (`FastExcel`):**
-   - Uses `org.dhatim:fastexcel` which streams raw XML directly to disk/ZIP stream.
-   - **3x–5x faster** than Apache POI with a tiny fraction of the memory footprint.
-
-3. **Memory Safety with JDBC Cursor Streaming:**
-   - Rows are fetched via `JdbcTemplate.query(..., RowCallbackHandler)` with a batch `fetchSize = 2000`.
-   - Never loads millions of rows into a `List<Employee>` on the JVM heap.
-
-4. **Automatic Sheet Rollover:**
-   - Automatically rolls over to multiple worksheets (`Employees Part 1`, `Employees Part 2`) when record counts exceed the Excel worksheet limit of 1,000,000 rows.
-
-5. **Real-time Progress Polling:**
-   - Exposes `GET /api/v1/exports/status/{jobId}` returning `percentage`, `processedRecords`, and `totalRecords`.
+An enterprise-grade, distributed, high-performance export architecture for Spring Boot designed to generate and stream multi-million record datasets (`.xlsx` or `.csv.gz`) with zero HTTP timeouts, low memory overhead, persistent job tracking, and real-time progress push notifications.
 
 ---
 
-## API Endpoints
+## 🏛️ Phase 2 Architecture Overview
+
+```
+                      ┌──────────────────────────────────────────────┐
+                      │              Web Client (UI)                 │
+                      └───────┬──────────────────────────────▲───────┘
+                              │ 1. POST /generate            │ 3. SSE Stream
+                              │    (202 Accepted)            │    (/notifications/sse/{id})
+                              ▼                              │
+                 ┌─────────────────────────┐                 │
+                 │   Spring REST API       │                 │
+                 └───────┬─────────┬───────┘                 │
+                         │         │                         │
+     2. Enqueue Task     │         │ Persist Initial Job     │
+                         ▼         ▼                         │
+          ┌──────────────────┐  ┌──────────────────┐         │
+          │ Distributed      │  │ Persistent Store │         │
+          │ Job Queue        │  │ (RDBMS / JPA)    │         │
+          └────────┬─────────┘  └────────▲─────────┘         │
+                   │                     │                   │
+                   ▼                     │ Updates Status    │
+          ┌──────────────────┐           │ & Progress        │
+          │ Dedicated Worker │───────────┴───────────────────┘
+          │ (Consumer Pool)  │
+          └────────┬─────────┘
+                   │
+                   │ 4. Fast Streaming Gen + Upload
+                   ▼
+          ┌───────────────────────────────────┐
+          │ Object Storage (Blob / S3 / MinIO)│
+          └───────────────────────────────────┘
+```
+
+---
+
+## 🚀 Key Phase 2 Features
+
+1. **Decoupled Job Queue & Worker Consumers:**
+   - Client requests are accepted immediately (`202 Accepted`) and submitted to a resilient job queue.
+   - Dedicated worker pool consumes tasks with backpressure handling, error isolation, and **exponential backoff retries** (up to 3 retries).
+   - Easily swappable with RabbitMQ, Kafka, or AWS SQS in multi-node clusters.
+
+2. **Persistent Job Store (Spring Data JPA):**
+   - Job metadata and execution lifecycles are persisted in the database (`export_jobs`).
+   - Survives server restarts and allows cross-cluster status queries.
+
+3. **Real-Time Push Notifications via Server-Sent Events (SSE):**
+   - Clients connect via `GET /api/v1/exports/notifications/sse/{jobId}`.
+   - Workers push live percentage progress updates (0% -> 100%) and instant download URLs directly to the client without polling.
+
+4. **Object Storage Abstraction (`StorageService`):**
+   - Decoupled from application local storage.
+   - Out-of-the-box local blob storage with token security, easily pluggable with AWS S3 / MinIO buckets.
+
+5. **Multi-Format Support:**
+   - **`XLSX` (FastExcel):** Multi-sheet rollover (>1,000,000 rows/sheet) with 3x–5x performance over Apache POI.
+   - **`CSV_GZ` (GZipped CSV):** Ultra-high throughput compressed CSV for massive datasets (5M–10M+ rows).
+
+6. **JDBC Cursor Streaming:**
+   - Constant low heap footprint (<64MB JVM heap used even during 1M+ export).
+
+---
+
+## 📡 API Reference
 
 ### 1. Trigger Export Job
-**Request:**
 ```http
 POST /api/v1/exports/generate
 Content-Type: application/json
 
 {
-  "department": "Engineering",
-  "maxRows": 500000
+  "format": "XLSX",           // or "CSV_GZ"
+  "department": "Engineering", // optional filter
+  "maxRows": 500000           // optional limit
 }
 ```
-*(Both `department` and `maxRows` are optional)*
 
 **Response (`202 Accepted`):**
 ```json
 {
-  "jobId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "jobId": "e306fc6e-07a8-4bb9-906d-b6574f179c3d",
   "status": "PENDING",
+  "format": "XLSX",
   "totalRecords": 0,
   "processedRecords": 0,
   "percentage": 0,
-  "fileName": null,
-  "fileSizeBytes": 0,
   "downloadUrl": null,
-  "errorMessage": null,
-  "createdAt": "2025-05-18T10:15:30.123"
+  "createdAt": "2026-10-11T12:00:00.000"
 }
 ```
 
 ---
 
-### 2. Poll Job Status
-**Request:**
+### 2. Real-Time SSE Progress Stream
+```http
+GET /api/v1/exports/notifications/sse/{jobId}
+Accept: text/event-stream
+```
+
+**Stream Events Received:**
+```
+event: INIT
+data: Connected to progress stream for job e306fc6e-07a8-4bb9-906d-b6574f179c3d
+
+event: PROGRESS
+data: {"jobId":"...","status":"IN_PROGRESS","totalRecords":50000,"processedRecords":20000,"percentage":40}
+
+event: PROGRESS
+data: {"jobId":"...","status":"COMPLETED","totalRecords":50000,"processedRecords":50000,"percentage":100,"downloadUrl":"/api/v1/exports/download/e306fc6e-07a8-4bb9-906d-b6574f179c3d.xlsx"}
+```
+
+---
+
+### 3. Poll Job Status (Alternative to SSE)
 ```http
 GET /api/v1/exports/status/{jobId}
 ```
 
-**Response (`200 OK` - While processing):**
-```json
-{
-  "jobId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-  "status": "IN_PROGRESS",
-  "totalRecords": 250000,
-  "processedRecords": 120000,
-  "percentage": 48,
-  "downloadUrl": null
-}
-```
-
-**Response (`200 OK` - When completed):**
-```json
-{
-  "jobId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-  "status": "COMPLETED",
-  "totalRecords": 250000,
-  "processedRecords": 250000,
-  "percentage": 100,
-  "fileName": "employees_export_3fa85f64-5717-4562-b3fc-2c963f66afa6.xlsx",
-  "fileSizeBytes": 14250320,
-  "downloadUrl": "/api/v1/exports/download/3fa85f64-5717-4562-b3fc-2c963f66afa6",
-  "completedAt": "2025-05-18T10:15:34.890"
-}
-```
-
 ---
 
-### 3. Download Generated Excel
-**Request:**
+### 4. Download Exported File
 ```http
-GET /api/v1/exports/download/{jobId}
+GET /api/v1/exports/download/{storageKey}
 ```
-**Response:** Binary `.xlsx` file attachment with Content-Disposition headers.
 
 ---
 
-### 4. Seed Test Records
-**Request:**
+### 5. Seed Test Records
 ```http
-POST /api/v1/exports/seed?count=200000
-```
-**Response:**
-```text
-Seeded 200000 employees in 2450 ms.
+POST /api/v1/exports/seed?count=100000
 ```
 
 ---
 
-## How to Run & Test
+## 🧪 Testing & Verification
 
 ```bash
-# 1. Navigate to the project folder
-cd excel-export
-
-# 2. Build and run tests
+# Run unit and integration tests
 mvn clean test
 
-# 3. Start the application
+# Run the Spring Boot application
 mvn spring-boot:run
 ```

@@ -1,68 +1,103 @@
 package com.example.excelexport.service;
 
-import com.example.excelexport.model.ExportJob;
+import com.example.excelexport.model.ExportFormat;
+import com.example.excelexport.model.ExportJobEntity;
+import com.example.excelexport.model.ExportStatus;
+import com.example.excelexport.repository.ExportJobRepository;
+import com.example.excelexport.storage.StorageService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
-import java.io.File;
 import java.time.LocalDateTime;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 
 @Service
 public class JobStorageService {
 
     private static final Logger log = LoggerFactory.getLogger(JobStorageService.class);
 
-    // In-memory ConcurrentHashMap for Phase 1. In Phase 2, this can be swapped with Redis / Postgres table.
-    private final Map<String, ExportJob> jobMap = new ConcurrentHashMap<>();
+    private final ExportJobRepository exportJobRepository;
+    private final StorageService storageService;
 
-    public ExportJob createJob(String jobId) {
-        ExportJob job = new ExportJob(jobId);
-        jobMap.put(jobId, job);
-        return job;
+    public JobStorageService(ExportJobRepository exportJobRepository, StorageService storageService) {
+        this.exportJobRepository = exportJobRepository;
+        this.storageService = storageService;
     }
 
-    public ExportJob getJob(String jobId) {
-        return jobMap.get(jobId);
+    @Transactional
+    public ExportJobEntity createJob(String jobId, ExportFormat format, String department, Long maxRows) {
+        ExportJobEntity job = new ExportJobEntity(jobId);
+        job.setFormat(format != null ? format : ExportFormat.XLSX);
+        job.setDepartmentFilter(department);
+        job.setMaxRowsLimit(maxRows);
+        job.setStatus(ExportStatus.PENDING);
+        job.setCreatedAt(LocalDateTime.now());
+        return exportJobRepository.save(job);
     }
 
+    @Transactional(readOnly = true)
+    public Optional<ExportJobEntity> getJob(String jobId) {
+        return exportJobRepository.findByJobId(jobId);
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<ExportJobEntity> getJobByToken(String token) {
+        return exportJobRepository.findByDownloadToken(token);
+    }
+
+    @Transactional
+    public ExportJobEntity saveJob(ExportJobEntity job) {
+        return exportJobRepository.save(job);
+    }
+
+    @Transactional
     public boolean removeJob(String jobId) {
-        ExportJob job = jobMap.remove(jobId);
-        if (job != null && job.getFilePath() != null) {
-            File file = new File(job.getFilePath());
-            if (file.exists()) {
-                return file.delete();
+        Optional<ExportJobEntity> jobOpt = exportJobRepository.findByJobId(jobId);
+        if (jobOpt.isPresent()) {
+            ExportJobEntity job = jobOpt.get();
+            if (job.getStorageKey() != null) {
+                storageService.deleteFile(job.getStorageKey());
             }
+            exportJobRepository.delete(job);
+            return true;
         }
         return false;
     }
 
-    public Map<String, ExportJob> getAllJobs() {
-        return jobMap;
+    @Transactional
+    public String generateDownloadToken(String jobId) {
+        Optional<ExportJobEntity> jobOpt = exportJobRepository.findByJobId(jobId);
+        if (jobOpt.isPresent()) {
+            ExportJobEntity job = jobOpt.get();
+            String token = UUID.randomUUID().toString().replace("-", "");
+            job.setDownloadToken(token);
+            job.setTokenExpiresAt(LocalDateTime.now().plusHours(2));
+            exportJobRepository.save(job);
+            return token;
+        }
+        return null;
     }
 
     /**
-     * Periodic cleanup of expired jobs & temp files older than 2 hours
+     * Periodic cleanup of expired jobs & storage files older than 24 hours
      */
     @Scheduled(fixedRate = 3600000) // Every hour
+    @Transactional
     public void cleanupOldJobs() {
-        LocalDateTime cutoff = LocalDateTime.now().minusHours(2);
-        jobMap.entrySet().removeIf(entry -> {
-            ExportJob job = entry.getValue();
-            if (job.getCreatedAt() != null && job.getCreatedAt().isBefore(cutoff)) {
-                if (job.getFilePath() != null) {
-                    File file = new File(job.getFilePath());
-                    if (file.exists()) {
-                        file.delete();
-                    }
-                }
-                log.info("Cleaned up expired export job {}", entry.getKey());
-                return true;
+        LocalDateTime cutoff = LocalDateTime.now().minusHours(24);
+        List<ExportJobEntity> expiredJobs = exportJobRepository.findByCreatedAtBefore(cutoff);
+
+        for (ExportJobEntity job : expiredJobs) {
+            if (job.getStorageKey() != null) {
+                storageService.deleteFile(job.getStorageKey());
             }
-            return false;
-        });
+            exportJobRepository.delete(job);
+            log.info("Cleaned up expired export job {}", job.getJobId());
+        }
     }
 }

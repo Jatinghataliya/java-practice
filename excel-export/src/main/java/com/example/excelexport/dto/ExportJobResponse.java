@@ -1,6 +1,7 @@
 package com.example.excelexport.dto;
 
-import com.example.excelexport.model.ExportJob;
+import com.example.excelexport.model.ExportFormat;
+import com.example.excelexport.model.ExportJobEntity;
 import com.example.excelexport.model.ExportStatus;
 
 import java.time.LocalDateTime;
@@ -9,12 +10,14 @@ public class ExportJobResponse {
 
     private String jobId;
     private ExportStatus status;
+    private ExportFormat format;
     private long totalRecords;
     private long processedRecords;
     private int percentage;
     private String fileName;
     private long fileSizeBytes;
     private String downloadUrl;
+    private String downloadToken;
     private String errorMessage;
     private LocalDateTime createdAt;
     private LocalDateTime completedAt;
@@ -22,19 +25,21 @@ public class ExportJobResponse {
     public ExportJobResponse() {
     }
 
-    public static ExportJobResponse fromJob(ExportJob job) {
+    public static ExportJobResponse fromEntity(ExportJobEntity entity) {
         ExportJobResponse res = new ExportJobResponse();
-        res.setJobId(job.getJobId());
-        res.setStatus(job.getStatus());
-        res.setTotalRecords(job.getTotalRecords());
-        res.setProcessedRecords(job.getProcessedRecords());
-        res.setPercentage(job.getPercentage());
-        res.setFileName(job.getFileName());
-        res.setFileSizeBytes(job.getFileSizeBytes());
-        res.setDownloadUrl(job.getDownloadUrl());
-        res.setErrorMessage(job.getErrorMessage());
-        res.setCreatedAt(job.getCreatedAt());
-        res.setCompletedAt(job.getCompletedAt());
+        res.setJobId(entity.getJobId());
+        res.setStatus(entity.getStatus());
+        res.setFormat(entity.getFormat());
+        res.setTotalRecords(entity.getTotalRecords());
+        res.setProcessedRecords(entity.getProcessedRecords());
+        res.setPercentage(entity.getPercentage());
+        res.setFileName(entity.getFileName());
+        res.setFileSizeBytes(entity.getFileSizeBytes());
+        res.setDownloadUrl(entity.getDownloadUrl());
+        res.setDownloadToken(entity.getDownloadToken());
+        res.setErrorMessage(entity.getErrorMessage());
+        res.setCreatedAt(entity.getCreatedAt());
+        res.setCompletedAt(entity.getCompletedAt());
         return res;
     }
 
@@ -52,6 +57,14 @@ public class ExportJobResponse {
 
     public void setStatus(ExportStatus status) {
         this.status = status;
+    }
+
+    public ExportFormat getFormat() {
+        return format;
+    }
+
+    public void setFormat(ExportFormat format) {
+        this.format = format;
     }
 
     public long getTotalRecords() {
@@ -100,6 +113,14 @@ public class ExportJobResponse {
 
     public void setDownloadUrl(String downloadUrl) {
         this.downloadUrl = downloadUrl;
+    }
+
+    public String getDownloadToken() {
+        return downloadToken;
+    }
+
+    public void setDownloadToken(String downloadToken) {
+        this.downloadToken = downloadToken;
     }
 
     public String getErrorMessage() {

@@ -1,15 +1,18 @@
 package com.example.excelexport;
 
-import com.example.excelexport.dto.ExportJobResponse;
-import com.example.excelexport.model.ExportJob;
+import com.example.excelexport.model.ExportFormat;
+import com.example.excelexport.model.ExportJobEntity;
 import com.example.excelexport.model.ExportStatus;
-import com.example.excelexport.service.ExcelExportService;
+import com.example.excelexport.queue.ExportQueueService;
+import com.example.excelexport.queue.ExportTaskMessage;
 import com.example.excelexport.service.JobStorageService;
+import com.example.excelexport.storage.StorageService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.core.io.Resource;
 
-import java.io.File;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -17,38 +20,81 @@ import static org.junit.jupiter.api.Assertions.*;
 class ExcelExportApplicationTests {
 
     @Autowired
-    private ExcelExportService excelExportService;
+    private ExportQueueService exportQueueService;
 
     @Autowired
     private JobStorageService jobStorageService;
 
+    @Autowired
+    private StorageService storageService;
+
     @Test
-    void testAsyncExportFlow() throws Exception {
-        String jobId = "test-job-" + System.currentTimeMillis();
-        ExportJob job = jobStorageService.createJob(jobId);
+    void testAsyncExcelExportQueueFlow() throws Exception {
+        String jobId = "test-job-xlsx-" + System.currentTimeMillis();
+        ExportJobEntity job = jobStorageService.createJob(jobId, ExportFormat.XLSX, null, null);
         assertNotNull(job);
         assertEquals(ExportStatus.PENDING, job.getStatus());
 
-        // Run export
-        excelExportService.processExportAsync(jobId, null);
+        // Enqueue task to background queue worker
+        boolean enqueued = exportQueueService.enqueue(new ExportTaskMessage(jobId, ExportFormat.XLSX, null, null));
+        assertTrue(enqueued);
 
         // Wait up to 10 seconds for completion
         int attempts = 0;
-        while (job.getStatus() != ExportStatus.COMPLETED && attempts < 20) {
+        Optional<ExportJobEntity> completedJobOpt = jobStorageService.getJob(jobId);
+        while (attempts < 20 && (completedJobOpt.isEmpty() || completedJobOpt.get().getStatus() != ExportStatus.COMPLETED)) {
             Thread.sleep(500);
             attempts++;
+            completedJobOpt = jobStorageService.getJob(jobId);
         }
 
-        assertEquals(ExportStatus.COMPLETED, job.getStatus());
-        assertTrue(job.getProcessedRecords() > 0);
-        assertNotNull(job.getFilePath());
+        assertTrue(completedJobOpt.isPresent());
+        ExportJobEntity completedJob = completedJobOpt.get();
+        assertEquals(ExportStatus.COMPLETED, completedJob.getStatus());
+        assertTrue(completedJob.getProcessedRecords() > 0);
+        assertNotNull(completedJob.getStorageKey());
+        assertNotNull(completedJob.getDownloadUrl());
 
-        File file = new File(job.getFilePath());
-        assertTrue(file.exists());
-        assertTrue(file.length() > 0);
+        // Test Storage Resource Load
+        Resource resource = storageService.loadResource(completedJob.getStorageKey());
+        assertTrue(resource.exists());
+        assertTrue(resource.contentLength() > 0);
 
         // Cleanup
         jobStorageService.removeJob(jobId);
-        assertFalse(file.exists());
+        assertFalse(resource.exists());
+    }
+
+    @Test
+    void testGzippedCsvExportQueueFlow() throws Exception {
+        String jobId = "test-job-csvgz-" + System.currentTimeMillis();
+        ExportJobEntity job = jobStorageService.createJob(jobId, ExportFormat.CSV_GZ, null, null);
+        assertNotNull(job);
+
+        // Enqueue task
+        exportQueueService.enqueue(new ExportTaskMessage(jobId, ExportFormat.CSV_GZ, null, null));
+
+        // Wait for completion
+        int attempts = 0;
+        Optional<ExportJobEntity> completedJobOpt = jobStorageService.getJob(jobId);
+        while (attempts < 20 && (completedJobOpt.isEmpty() || completedJobOpt.get().getStatus() != ExportStatus.COMPLETED)) {
+            Thread.sleep(500);
+            attempts++;
+            completedJobOpt = jobStorageService.getJob(jobId);
+        }
+
+        assertTrue(completedJobOpt.isPresent());
+        ExportJobEntity completedJob = completedJobOpt.get();
+        assertEquals(ExportStatus.COMPLETED, completedJob.getStatus());
+        assertTrue(completedJob.getFileName().endsWith(".csv.gz"));
+
+        // Storage load check
+        Resource resource = storageService.loadResource(completedJob.getStorageKey());
+        assertTrue(resource.exists());
+        assertTrue(resource.contentLength() > 0);
+
+        // Cleanup
+        jobStorageService.removeJob(jobId);
+        assertFalse(resource.exists());
     }
 }
