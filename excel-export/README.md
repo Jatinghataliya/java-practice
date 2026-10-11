@@ -54,7 +54,7 @@ An enterprise-grade, distributed, high-performance export architecture for Sprin
    - Workers push live percentage progress updates (0% -> 100%) and instant download URLs directly to the client without polling.
 
 4. **Pluggable Object Storage Providers:**
-   - **`Local`**: Fast local file storage with secure download tokens.
+   - **`Local`**: Fast local file storage with secure download tokens (Default).
    - **`AWS S3`**: AWS SDK v2 with `S3Presigner` for direct client downloads.
    - **`MinIO`**: On-premise S3-compatible object storage with custom endpoints.
    - **`Azure Blob`**: Microsoft Azure Storage with SAS token generation.
@@ -71,18 +71,16 @@ An enterprise-grade, distributed, high-performance export architecture for Sprin
 
 ## 🐳 Docker & Docker Compose Deployment
 
-### Run Complete Stack (Spring Boot + MinIO Object Storage)
+### Run Container with Docker Compose
 
 ```bash
 cd Thread/excel-export
 
-# Spin up Spring Boot service and MinIO Object Storage
+# Spin up self-contained Spring Boot export service
 docker compose up -d --build
 ```
 
 - **Spring Boot API:** `http://localhost:8080`
-- **MinIO S3 Endpoint:** `http://localhost:9000`
-- **MinIO Web Console:** `http://localhost:9001` (User: `minioadmin`, Pass: `minioadmin`)
 
 ### Build & Run Single Container
 
