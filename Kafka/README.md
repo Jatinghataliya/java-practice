@@ -25,6 +25,8 @@ Plain Java (no Spring) example of a Kafka producer and consumer group against a
 | `TopicCreator` | Creates `orders` topic (3 partitions, RF 3) and prints leader/replicas/ISR |
 | `OrderProducer` | Sends keyed messages (`acks=all`, idempotent) |
 | `OrderConsumer` | Consumer in a group, manual offset commit, clean shutdown |
+| `OrderStreamsApp` | **Kafka Streams** computations on `orders` (see below) |
+| `StreamsResultPrinter` | Prints everything the streams app writes to its output topics |
 
 ## Run
 
@@ -45,6 +47,31 @@ mvn -q compile exec:java "-Dexec.mainClass=com.example.kafka.OrderConsumer" "-De
 # 5. produce 20 messages, 500 ms apart
 mvn -q compile exec:java "-Dexec.mainClass=com.example.kafka.OrderProducer" "-Dexec.args=20 500"
 ```
+
+## Kafka Streams computations
+
+`OrderStreamsApp` builds one topology that reads `orders` and produces four output streams in parallel:
+
+| Output topic | Computation | Example output |
+|---|---|---|
+| `order-total-by-customer` | Running total per customer | `customer-2 → total=3706` |
+| `order-avg-by-customer` | Running average per customer | `customer-2 → count=6 avg=445.50` |
+| `order-windowed-total` | Total + count per customer per **10 second tumbling window** | `customer-2@[06:17:40-06:17:50] → count=6 total=2673` |
+| `high-value-orders` | Stateless filter – orders ≥ 500 copied as-is | `customer-1 → orderId=8,amount=716` |
+
+```powershell
+# In terminal 1 – start the streams app (Ctrl+C to stop)
+mvn -q compile exec:java "-Dexec.mainClass=com.example.kafka.OrderStreamsApp"
+
+# In terminal 2 – watch all 4 output topics
+mvn -q compile exec:java "-Dexec.mainClass=com.example.kafka.StreamsResultPrinter"
+
+# In terminal 3 – produce orders
+mvn -q compile exec:java "-Dexec.mainClass=com.example.kafka.OrderProducer" "-Dexec.args=20 300"
+```
+
+**Scaling:** start a second `OrderStreamsApp` with the same `application.id`.
+Kafka assigns different partitions to each instance and they share the work.
 
 ## Things to try
 
