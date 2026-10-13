@@ -1,6 +1,155 @@
 services:
   # -----------------------------------------------------------
-  # MinIO Object Storage (Self-hosted S3 compatible store)
+  # NGINX Load Balancer (Public Gateway & Ingress Reverse Proxy)
+  # -----------------------------------------------------------
+  load-balancer:
+    image: nginx:alpine
+    container_name: export-load-balancer
+    ports:
+      - "8080:80"   # Public HTTP Entrypoint
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - excel-export-service-1
+      - excel-export-service-2
+      - excel-export-service-3
+    restart: unless-stopped
+    networks:
+      - export-network
+
+  # -----------------------------------------------------------
+  # Spring Boot Application Node 1
+  # -----------------------------------------------------------
+  excel-export-service-1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: excel-export-node-1
+    environment:
+      - SPRING_PROFILES_ACTIVE=default
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres-db:5432/exportdb
+      - SPRING_DATASOURCE_DRIVER_CLASS_NAME=org.postgresql.Driver
+      - SPRING_DATASOURCE_USERNAME=postgres
+      - SPRING_DATASOURCE_PASSWORD=postgres
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=update
+      - SPRING_DATA_REDIS_HOST=redis-broker
+      - SPRING_DATA_REDIS_PORT=6379
+      - APP_CLUSTER_REDIS_ENABLED=true
+      - APP_STORAGE_TYPE=minio
+      - APP_STORAGE_MINIO_ENDPOINT=http://minio:9000
+      - APP_STORAGE_MINIO_BUCKET_NAME=export-bucket
+      - APP_STORAGE_MINIO_ACCESS_KEY=minioadmin
+      - APP_STORAGE_MINIO_SECRET_KEY=minioadmin
+      - APP_EXPORT_STORAGE_DIR=/app/temp-exports
+      - JAVA_OPTS=-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:+UseG1GC
+    depends_on:
+      - postgres-db
+      - redis-broker
+      - minio
+    volumes:
+      - app-temp-exports-1:/app/temp-exports
+    restart: unless-stopped
+    networks:
+      - export-network
+
+  # -----------------------------------------------------------
+  # Spring Boot Application Node 2
+  # -----------------------------------------------------------
+  excel-export-service-2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: excel-export-node-2
+    environment:
+      - SPRING_PROFILES_ACTIVE=default
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres-db:5432/exportdb
+      - SPRING_DATASOURCE_DRIVER_CLASS_NAME=org.postgresql.Driver
+      - SPRING_DATASOURCE_USERNAME=postgres
+      - SPRING_DATASOURCE_PASSWORD=postgres
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=update
+      - SPRING_DATA_REDIS_HOST=redis-broker
+      - SPRING_DATA_REDIS_PORT=6379
+      - APP_CLUSTER_REDIS_ENABLED=true
+      - APP_STORAGE_TYPE=minio
+      - APP_STORAGE_MINIO_ENDPOINT=http://minio:9000
+      - APP_STORAGE_MINIO_BUCKET_NAME=export-bucket
+      - APP_STORAGE_MINIO_ACCESS_KEY=minioadmin
+      - APP_STORAGE_MINIO_SECRET_KEY=minioadmin
+      - APP_EXPORT_STORAGE_DIR=/app/temp-exports
+      - JAVA_OPTS=-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:+UseG1GC
+    depends_on:
+      - postgres-db
+      - redis-broker
+      - minio
+    volumes:
+      - app-temp-exports-2:/app/temp-exports
+    restart: unless-stopped
+    networks:
+      - export-network
+
+  # -----------------------------------------------------------
+  # Spring Boot Application Node 3
+  # -----------------------------------------------------------
+  excel-export-service-3:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: excel-export-node-3
+    environment:
+      - SPRING_PROFILES_ACTIVE=default
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres-db:5432/exportdb
+      - SPRING_DATASOURCE_DRIVER_CLASS_NAME=org.postgresql.Driver
+      - SPRING_DATASOURCE_USERNAME=postgres
+      - SPRING_DATASOURCE_PASSWORD=postgres
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=update
+      - SPRING_DATA_REDIS_HOST=redis-broker
+      - SPRING_DATA_REDIS_PORT=6379
+      - APP_CLUSTER_REDIS_ENABLED=true
+      - APP_STORAGE_TYPE=minio
+      - APP_STORAGE_MINIO_ENDPOINT=http://minio:9000
+      - APP_STORAGE_MINIO_BUCKET_NAME=export-bucket
+      - APP_STORAGE_MINIO_ACCESS_KEY=minioadmin
+      - APP_STORAGE_MINIO_SECRET_KEY=minioadmin
+      - APP_EXPORT_STORAGE_DIR=/app/temp-exports
+      - JAVA_OPTS=-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:+UseG1GC
+    depends_on:
+      - postgres-db
+      - redis-broker
+      - minio
+    volumes:
+      - app-temp-exports-3:/app/temp-exports
+    restart: unless-stopped
+    networks:
+      - export-network
+
+  # -----------------------------------------------------------
+  # Shared PostgreSQL Database (ACID Store for Cluster Nodes)
+  # -----------------------------------------------------------
+  postgres-db:
+    image: postgres:16-alpine
+    container_name: export-postgres-db
+    environment:
+      - POSTGRES_DB=exportdb
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - export-network
+
+  # -----------------------------------------------------------
+  # Redis Broker (Distributed Queue & Pub/Sub for SSE Sync)
+  # -----------------------------------------------------------
+  redis-broker:
+    image: redis:7-alpine
+    container_name: export-redis-broker
+    restart: unless-stopped
+    networks:
+      - export-network
+
+  # -----------------------------------------------------------
+  # MinIO Object Storage (Distributed Shared S3 Bucket)
   # -----------------------------------------------------------
   minio:
     build:
@@ -19,36 +168,12 @@ services:
     networks:
       - export-network
 
-  # -----------------------------------------------------------
-  # Spring Boot Excel Export Service
-  # -----------------------------------------------------------
-  excel-export-service:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: excel-export-service
-    ports:
-      - "8080:8080"
-    environment:
-      - SPRING_PROFILES_ACTIVE=default
-      - APP_STORAGE_TYPE=minio
-      - APP_STORAGE_MINIO_ENDPOINT=http://minio:9000
-      - APP_STORAGE_MINIO_BUCKET_NAME=export-bucket
-      - APP_STORAGE_MINIO_ACCESS_KEY=minioadmin
-      - APP_STORAGE_MINIO_SECRET_KEY=minioadmin
-      - APP_EXPORT_STORAGE_DIR=/app/temp-exports
-      - JAVA_OPTS=-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:+UseG1GC
-    depends_on:
-      - minio
-    volumes:
-      - app-temp-exports:/app/temp-exports
-    restart: unless-stopped
-    networks:
-      - export-network
-
 volumes:
+  postgres-data:
   minio-data:
-  app-temp-exports:
+  app-temp-exports-1:
+  app-temp-exports-2:
+  app-temp-exports-3:
 
 networks:
   export-network:

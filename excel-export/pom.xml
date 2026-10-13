@@ -45,6 +45,19 @@
             <scope>runtime</scope>
         </dependency>
 
+        <!-- PostgreSQL Database Driver for shared clustered deployment -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- Spring Data Redis for Distributed Pub/Sub & Cluster Sync -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+
         <!-- High-Performance Multi-threaded FastExcel (Streaming XLSX) -->
         <dependency>
             <groupId>org.dhatim</groupId>

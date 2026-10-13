@@ -1,11 +1,14 @@
 package com.example.excelexport.queue;
 
 import com.example.excelexport.service.ExcelExportService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.concurrent.*;
@@ -15,6 +18,16 @@ public class ExportQueueService {
 
     private static final Logger log = LoggerFactory.getLogger(ExportQueueService.class);
     private static final int MAX_RETRIES = 3;
+    public static final String TASK_QUEUE_KEY = "export-task-queue";
+
+    @Value("${app.cluster.redis.enabled:false}")
+    private boolean redisClusterEnabled;
+
+    @Autowired(required = false)
+    private StringRedisTemplate redisTemplate;
+
+    @Autowired(required = false)
+    private ObjectMapper objectMapper;
 
     private final BlockingQueue<ExportTaskMessage> messageQueue = new LinkedBlockingQueue<>(500);
     private final ExecutorService consumerThreadPool = Executors.newFixedThreadPool(4);
@@ -37,12 +50,23 @@ public class ExportQueueService {
     }
 
     /**
-     * Producer: Enqueues an export task message
+     * Producer: Enqueues an export task message across the cluster
      */
     public boolean enqueue(ExportTaskMessage message) {
+        if (redisClusterEnabled && redisTemplate != null && objectMapper != null) {
+            try {
+                String json = objectMapper.writeValueAsString(message);
+                redisTemplate.opsForList().leftPush(TASK_QUEUE_KEY, json);
+                log.info("Enqueued export task to distributed Redis queue for Job ID {}", message.getJobId());
+                return true;
+            } catch (Exception e) {
+                log.error("Failed to enqueue to Redis, falling back to local queue: {}", e.getMessage());
+            }
+        }
+
         boolean offered = messageQueue.offer(message);
         if (offered) {
-            log.info("Enqueued export task for Job ID {}", message.getJobId());
+            log.info("Enqueued export task to local queue for Job ID {}", message.getJobId());
         } else {
             log.warn("Export queue is FULL! Rejected Job ID {}", message.getJobId());
         }
@@ -50,12 +74,27 @@ public class ExportQueueService {
     }
 
     /**
-     * Consumer loop: fetches messages and processes them with retry handling
+     * Consumer loop: fetches messages from Redis or in-memory queue and processes them
      */
     private void processQueue(int workerId) {
         while (running && !Thread.currentThread().isInterrupted()) {
             try {
-                ExportTaskMessage message = messageQueue.poll(2, TimeUnit.SECONDS);
+                ExportTaskMessage message = null;
+
+                if (redisClusterEnabled && redisTemplate != null && objectMapper != null) {
+                    try {
+                        String rawMessage = redisTemplate.opsForList().rightPop(TASK_QUEUE_KEY, 2, TimeUnit.SECONDS);
+                        if (rawMessage != null) {
+                            message = objectMapper.readValue(rawMessage, ExportTaskMessage.class);
+                        }
+                    } catch (Exception ex) {
+                        // Redis connection hiccup, fall back to local queue poll
+                        message = messageQueue.poll(2, TimeUnit.SECONDS);
+                    }
+                } else {
+                    message = messageQueue.poll(2, TimeUnit.SECONDS);
+                }
+
                 if (message == null) {
                     continue;
                 }

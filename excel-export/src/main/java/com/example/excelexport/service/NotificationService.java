@@ -1,8 +1,12 @@
 package com.example.excelexport.service;
 
 import com.example.excelexport.dto.JobProgressEvent;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -16,6 +20,15 @@ import java.util.concurrent.CopyOnWriteArrayList;
 public class NotificationService {
 
     private static final Logger log = LoggerFactory.getLogger(NotificationService.class);
+
+    @Value("${app.cluster.redis.enabled:false}")
+    private boolean redisClusterEnabled;
+
+    @Autowired(required = false)
+    private StringRedisTemplate redisTemplate;
+
+    @Autowired(required = false)
+    private ObjectMapper objectMapper;
 
     // Emitters by Job ID (supports multiple browser tabs / clients subscribed to same job)
     private final Map<String, List<SseEmitter>> emitterMap = new ConcurrentHashMap<>();
@@ -46,9 +59,28 @@ public class NotificationService {
     }
 
     /**
-     * Broadcast progress event to all active subscribers for the job
+     * Broadcast progress event to all active subscribers across the cluster
      */
     public void notifyProgress(JobProgressEvent event) {
+        // If Redis cluster is enabled, broadcast event to all nodes via Pub/Sub
+        if (redisClusterEnabled && redisTemplate != null && objectMapper != null) {
+            try {
+                String payload = objectMapper.writeValueAsString(event);
+                redisTemplate.convertAndSend("export-progress-topic", payload);
+                return;
+            } catch (Exception e) {
+                log.warn("Failed to broadcast progress via Redis Pub/Sub, falling back to local: {}", e.getMessage());
+            }
+        }
+
+        // Local node dispatch
+        emitLocalProgress(event);
+    }
+
+    /**
+     * Dispatches event to local SSE connections on this specific cluster node
+     */
+    public void emitLocalProgress(JobProgressEvent event) {
         List<SseEmitter> emitters = emitterMap.get(event.getJobId());
         if (emitters == null || emitters.isEmpty()) {
             return;

@@ -15,14 +15,19 @@ logging:
 spring:
   application:
     name: excel-export-service
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+      timeout: 2000ms
   datasource:
-    url: jdbc:h2:mem:employeedb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;CACHE_SIZE=65536
-    driver-class-name: org.h2.Driver
-    username: sa
-    password:
+    url: ${SPRING_DATASOURCE_URL:jdbc:h2:mem:employeedb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;CACHE_SIZE=65536}
+    driver-class-name: ${SPRING_DATASOURCE_DRIVER_CLASS_NAME:org.h2.Driver}
+    username: ${SPRING_DATASOURCE_USERNAME:sa}
+    password: ${SPRING_DATASOURCE_PASSWORD:}
   jpa:
     hibernate:
-      ddl-auto: create-drop
+      ddl-auto: ${SPRING_JPA_HIBERNATE_DDL_AUTO:update}
     show-sql: false
     open-in-view: false
     properties:
@@ -36,6 +41,10 @@ spring:
       path: /h2-console
 
 app:
+  cluster:
+    redis:
+      enabled: ${APP_CLUSTER_REDIS_ENABLED:false}
+
   storage:
     type: local # Options: local | s3 | minio | azure | gcs
     s3:
