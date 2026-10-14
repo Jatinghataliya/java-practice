@@ -1,0 +1,8 @@
+# Start the broker before running the demo:  docker compose up -d
+# Management UI: http://localhost:15672 (guest/guest)
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
