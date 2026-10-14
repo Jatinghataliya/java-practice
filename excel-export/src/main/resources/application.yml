@@ -1,0 +1,48 @@
+server:
+  port: 8080
+
+debug: false
+
+logging:
+  level:
+    root: INFO
+    org.springframework.boot.autoconfigure: INFO
+    org.springframework.boot.autoconfigure.logging: INFO
+    org.springframework: INFO
+    org.hibernate: INFO
+    com.example.excelexport: INFO
+
+spring:
+  application:
+    name: excel-export-service
+  datasource:
+    url: jdbc:h2:mem:employeedb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;CACHE_SIZE=65536
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          fetch_size: 2000
+          batch_size: 1000
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+app:
+  export:
+    storage-dir: ./temp-exports
+    batch-fetch-size: 2000
+    rows-per-sheet: 1000000
+    seed-sample-records: 50000 # Number of records to automatically seed on startup for quick testing
+    thread-pool:
+      core-pool-size: 4
+      max-pool-size: 8
+      queue-capacity: 50
+      thread-name-prefix: "ExcelExport-"
